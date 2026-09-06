@@ -163,9 +163,77 @@
           </div>
           <span class="text-base font-black text-amber-400 bg-slate-800 border border-slate-700 px-3 py-1 rounded-xl">+25 🪙</span>
         </div>
-        <button id="watchAdBtn" onclick="watchMonetagAd()" class="w-full bg-amber-400 hover:bg-amber-300 text-slate-950 font-black py-3 rounded-xl text-xs uppercase tracking-wider transition active:scale-95 border-2 border-slate-900">Watch Ad Now</button>
-        <p id="adTimer" class="text-center text-xs text-amber-400 font-mono font-bold"></p>
-      </div>
+        let adTimerInterval;
+let adSecondsLeft = 30;
+let isAdWatched = false;
+
+function watchMonetagAd() {
+  const watchBtn = document.getElementById('watchAdBtn');
+  const timerText = document.getElementById('adTimer');
+
+  if (isAdWatched) {
+    // Agar ad dekh liya hai toh reward claim/credit karne ki API call lagayein
+    claimAdRewardFromBackend();
+    return;
+  }
+
+  // Button disable karein aur timer start karein
+  watchBtn.disabled = true;
+  watchBtn.classList.add('opacity-50', 'cursor-not-allowed');
+  adSecondsLeft = 30;
+
+  // Optional: Agar Monetag/Ad ka direct link open karna ho
+  // window.open('YOUR_AD_LINK_HERE', '_blank');
+
+  adTimerInterval = setInterval(() => {
+    adSecondsLeft--;
+    watchBtn.innerText = `Watching... (${adSecondsLeft}s)`;
+    timerText.innerText = `Please wait ${adSecondsLeft}s to unlock reward`;
+
+    if (adSecondsLeft <= 0) {
+      clearInterval(adTimerInterval);
+      isAdWatched = true;
+      watchBtn.disabled = false;
+      watchBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+      watchBtn.innerText = 'Claim 100 Coins 🪙';
+      watchBtn.classList.remove('bg-amber-400', 'hover:bg-amber-300');
+      watchBtn.classList.add('bg-emerald-500', 'hover:bg-emerald-400');
+      timerText.innerText = 'Ad complete! Click the button above to claim.';
+    }
+  }, 1000);
+}
+
+function claimAdRewardFromBackend() {
+  const currentUserId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id || "7985106214";
+
+  fetch('/api/bot', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'claim_ad_reward',
+      userId: currentUserId,
+      watchDuration: 30
+    })
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.success) {
+      alert("🎉 " + data.message);
+      document.getElementById('total-balance').innerText = `${data.newBalance} Coins`;
+      
+      // Reset button state for next ad
+      isAdWatched = false;
+      const watchBtn = document.getElementById('watchAdBtn');
+      watchBtn.innerText = 'Watch Ad Now';
+      watchBtn.classList.remove('bg-emerald-500', 'hover:bg-emerald-400');
+      watchBtn.classList.add('bg-amber-400', 'hover:bg-amber-300');
+      document.getElementById('adTimer').innerText = '';
+    } else {
+      alert("Error: " + data.error);
+    }
+  })
+  .catch(err => alert("Something went wrong!"));
+}
 
       <!-- Permanent Social Tasks -->
       <div class="bg-white rounded-2xl p-4 shadow-md border-2 border-slate-900 space-y-3">
