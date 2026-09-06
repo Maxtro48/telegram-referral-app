@@ -1,11 +1,135 @@
-{
-  "name": "telegram-mini-app",
-  "version": "1.0.0",
-  "main": "api/bot.js",
-  "scripts": {
-    "start": "node api/bot.js"
-  },
-  "dependencies": {
-    "telegraf": "^4.16.3"
+const { Telegraf, Markup } = require('telegraf');
+
+const bot = new Telegraf(process.env.BOT_TOKEN);
+
+// User State Storage (Database)
+let userDatabase = {};
+
+function getUser(userId) {
+  if (!userDatabase[userId]) {
+    userDatabase[userId] = {
+      totalCoins: 9000,
+      totalWithdrawnRupees: 0
+    };
   }
+  return userDatabase[userId];
 }
+
+// Telegram Start Command
+bot.start((ctx) => {
+  const startParam = ctx.startPayload;
+  
+  const appDomain = process.env.VERCEL_URL 
+    ? `https://${process.env.VERCEL_URL}` 
+    : 'https://telegram-referral-app-indol.vercel.app';
+
+  const appUrl = startParam 
+    ? `${appDomain}/index.html?start=${startParam}` 
+    : `${appDomain}/index.html`;
+
+  return ctx.reply(
+    `Welcome ${ctx.from.first_name}! 👋\n\nTap below to launch the Mini App:`,
+    Markup.inlineKeyboard([
+      [Markup.button.webApp('🚀 Launch Web App', appUrl)]
+    ])
+  );
+});
+
+// Vercel Serverless Function Handler
+module.exports = async (req, res) => {
+  try {
+    // 1. Withdrawal Processing Handler (Minimum 5000 Coins = ₹50)
+    if (req.method === 'POST' && req.body.action === 'process_withdrawal') {
+      const { userId, coins } = req.body;
+      const coinAmount = Number(coins);
+
+      if (coinAmount < 5000) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Minimum withdrawal is 5000 coins (₹50)' 
+        });
+      }
+
+      const user = getUser(userId);
+
+      if (user.totalCoins < coinAmount) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Insufficient coin balance' 
+        });
+      }
+
+      // Calculation: 100 Coins = ₹1 (5000 Coins = ₹50)
+      const rupeesWithdrawn = coinAmount / 100;
+
+      // Balance Deduction & Update
+      user.totalCoins -= coinAmount;
+      user.totalWithdrawnRupees += rupeesWithdrawn;
+
+      return res.status(200).json({
+        success: true,
+        rupeesWithdrawn: rupeesWithdrawn,
+        newBalance: user.totalCoins,
+        totalRupeesWithdrawn: user.totalWithdrawnRupees,
+        message: `₹${rupeesWithdrawn} withdrawal request successful!`
+      });
+    }
+
+    // 2. Ad Reward Handling (30-Sec Validation Check)
+    if (req.method === 'POST' && req.body.action === 'claim_ad_reward') {
+      const { userId, watchDuration } = req.body;
+
+      if (!watchDuration || Number(watchDuration) < 20) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'You must watch the full 30 seconds ad.' 
+        });
+      }
+
+      const user = getUser(userId);
+      const rewardCoins = 100;
+      user.totalCoins += rewardCoins;
+
+      return res.status(200).json({
+        success: true,
+        rewardCoins: rewardCoins,
+        newBalance: user.totalCoins,
+        message: '100 Coins credited successfully!'
+      });
+    }
+
+    // 3. Referral Success Notification Handler
+    if (req.method === 'POST' && req.body.action === 'referral_success') {
+      const { referrerId, newUserId } = req.body;
+
+      if (referrerId && newUserId) {
+        const currentTime = new Date().toLocaleString('en-IN', {
+          timeZone: 'Asia/Kolkata',
+          dateStyle: 'medium',
+          timeStyle: 'short'
+        });
+
+        const message = `🎉 *Referral Successful!*\n\n` +
+                        `👤 *New User ID:* \`${newUserId}\`\n` +
+                        `⏰ *Time:* ${currentTime}\n\n` +
+                        `Aapko aapka referral bonus mil gaya hai! 🚀`;
+
+        await bot.telegram.sendMessage(referrerId, message, { parse_mode: 'Markdown' });
+        return res.status(200).json({ success: true, message: 'Notification sent' });
+      }
+
+      return res.status(400).json({ success: false, error: 'Invalid parameters' });
+    }
+
+    // 4. Telegram Webhook Updates Listener
+    if (req.method === 'POST' && req.body.update_id) {
+      await bot.handleUpdate(req.body);
+      return res.status(200).send('OK');
+    }
+
+    return res.status(200).send('Bot API Active');
+  } catch (error) {
+    console.error('Server Error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+};
