@@ -8,7 +8,7 @@ let userDatabase = {};
 function getUser(userId) {
   if (!userDatabase[userId]) {
     userDatabase[userId] = {
-      totalCoins: 9000,
+      totalCoins: 50,           // 50 Bonus Coins for New Users
       totalWithdrawnRupees: 0
     };
   }
